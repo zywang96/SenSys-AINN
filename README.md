@@ -12,7 +12,10 @@ Each folder includes the corresponding **dataset**, **baseline models**, and **c
 
 ## Quick Start -- Colab
 
-We strongly recommend running the code on a dedicated GPU machine or an HPC cluster using the environment specified in `requirements.txt`. While Colab is convenient to get started with, it can be difficult to manage package versions consistently and reproduce the exact environment, which may lead to suboptimal results.
+You can also try it on Colab by starting with this Jupyter [notebook](https://colab.research.google.com/drive/1hUXuc5d0y9dtZFsrKOyICE-zxuPoZkYl?usp=sharing)
+
+However, we strongly recommend running the code on a dedicated GPU machine or an HPC cluster using the environment specified in `requirements.txt`. While Colab is convenient for getting started, it can be difficult to manage package versions consistently and reproduce the exact environment, which may lead to suboptimal results.
+
 
 ## TODO
 - [x] Add instructions/README
