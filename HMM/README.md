@@ -1,4 +1,4 @@
-# Fall Detection (HMM) — AINN Blueprint
+# Fall Detection (HMM)
 
 This folder contains an implementation of **Fall Detection** using **HMM** as the algorithmic blueprint.
 

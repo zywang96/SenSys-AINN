@@ -1,4 +1,4 @@
-# Choice Problem (Fracktional Knapsack) — AINN Blueprint
+# Choice Problem (Fracktional Knapsack)
 
 This folder contains an implementation of **Choice Problem** using **Fractional Knapsack** as the algorithmic blueprint.
 
@@ -27,6 +27,12 @@ Configuration files live in `./config` as YAML. The command above uses the defau
 You can tune the `num_samples` parameter to control the size of the training dataset (E.g., 1000, 2000, etc.)
 All the models are saved in `./ainn_model` and `./tmp/CLRS30`.
 Right now, this training uses a PSO method that runs mostly on the CPU. We will release a CUDA/GPU version soon.
+
+We also include a simple inference script to run the AINN end-to-end.
+
+```bash
+python3 ainn_eval.py --config ainn
+```
 
 ---
 

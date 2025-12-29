@@ -1,4 +1,4 @@
-# Keyword Spotting (DTW + KNN) — AINN Blueprint
+# Keyword Spotting (DTW + KNN)
 
 This folder contains an implementation of **Keyword Spotting (KWS)** using **DTW + KNN** as the algorithmic blueprint.
 
