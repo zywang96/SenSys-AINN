@@ -1,20 +1,36 @@
 import torch
 import torch.nn as nn
 import sys
+import os
 import numpy as np
 import random
 import torch.nn.functional as F
-torch.manual_seed(0)
+import yaml
+import argparse
 
-num_sample = 1000
+parser = argparse.ArgumentParser('Train AINN - KNAPSACK')
+parser.add_argument("--config", type=str, default = 'ainn', help="config")
+args = parser.parse_args()
+
+cfg = yaml.safe_load(open('config/{}.yaml'.format(args.config)))
+
+SEED = cfg['seed'] #12345
+torch.manual_seed(SEED)
+num_sample = cfg['data']['num_samples']
+
+input_size = cfg['stage1']['input_size'] #10
+hidden_size = cfg['stage1']['hidden_size'] #64
+output_size = cfg['stage1']['output_size'] #5
+num_particles = cfg['stage1']['num_particles'] #100
+num_iterations = cfg['stage1']['num_iterations'] #50
+
 
 def compute_profits(sorted_z_ind, weights, profits):
     batch_size = weights.size()[0]
     ind_value = torch.zeros((batch_size, 5))
     for i in range(batch_size):
-        remaining_weight = 15
         curr_ind = torch.tensor([0, 0, 0, 0, 0], dtype=torch.float32)
-        
+        remaining_weight = 15
         for ind in sorted_z_ind[i]:
             if remaining_weight <= 0:
                 break
@@ -125,9 +141,9 @@ def particle_swarm_optimization(input_size, hidden_size, output_size, num_partic
     global_best_cosine = -2
     best_fitness_score = -10000
 
-    weights_test = np.load('feature/feature_weight_test.npy')
-    profits_test = np.load('feature/feature_profit_test.npy')
-    label_test = np.load('feature/label_ind_test.npy')
+    weights_test = np.load('dataset/feature_weight_val.npy')
+    profits_test = np.load('dataset/feature_profit_val.npy')
+    label_test = np.load('dataset/label_ind_val.npy')
     data_test = torch.tensor(np.concatenate((weights_test, profits_test), -1), dtype=torch.float32)
     label_test = torch.tensor(label_test, dtype=torch.float32)
 
@@ -143,7 +159,7 @@ def particle_swarm_optimization(input_size, hidden_size, output_size, num_partic
         personal_best_positions.append((w1.clone(), b1.clone(), w2.clone(), b2.clone(), g_logits.clone()))
         personal_best_scores.append(float('-inf'))
 
-    w, c1, c2 = 0.5, 1.8, 1.8
+    w, c1, c2 = cfg['stage1']['w'], cfg['stage1']['c1'], cfg['stage1']['c2'] #0.5, 1.8, 1.8
 
     for iteration in range(num_iterations):
         for i in range(num_particles):
@@ -165,20 +181,17 @@ def particle_swarm_optimization(input_size, hidden_size, output_size, num_partic
             if fitness > global_best_score:
                 global_best_score = fitness
                 global_best_cosine = acc
-                print(iteration, fitness, acc)
+                print(f"Iteration {iteration}: Particle={i}, Score={fitness:.5f}")
                 global_best_position = (w1.clone(), b1.clone(), w2.clone(), b2.clone(), g_logits.clone())
 
                 model.eval()
-                z = model(data_test) #torch.log(data_test))
-                sorted_z_value, sorted_z_ind = torch.sort(z, dim=-1, descending=True)
-                sorted_z_value2, sorted_z_ind2 = torch.sort(data_test[:, 5:] / data_test[:, :5], dim=-1, descending=True)
-                c, t = compute_acc(sorted_z_ind, sorted_z_ind2)
-                print("acc:", c / t)
-                _fitness, _acc = fitness_function(model, data_test, label_test)
+                _fitness, _ = fitness_function(model, data_test, label_test)
+                print(f"    Val score:{_fitness:.5f}")
                 if _fitness > best_fitness_score:
                     print('saving...')
                     state_dict = {'net': model.state_dict()}
-                    torch.save(state_dict, 'model_ainn_stage1_{}.pth'.format(num_sample))
+                    os.makedirs('ainn_model', exist_ok = True)
+                    torch.save(state_dict, 'ainn_model/model_{}_stage1_{}.pth'.format(args.config, num_sample))
                     best_fitness_score = _fitness
 
         for i in range(num_particles):
@@ -196,14 +209,9 @@ def particle_swarm_optimization(input_size, hidden_size, output_size, num_partic
 
     return global_best_position
 
-input_size = 10
-hidden_size = 64
-output_size = 5
-num_particles = 100
-num_iterations = 30
-weights = np.load('feature/feature_weight_train.npy')[:num_smaple]
-profits = np.load('feature/feature_profit_train.npy')[:num_smaple]
-label = np.load('feature/label_ind_train.npy')[:num_smaple]
+weights = np.load('dataset/feature_weight_train.npy')[:num_sample]
+profits = np.load('dataset/feature_profit_train.npy')[:num_sample]
+label = np.load('dataset/label_ind_train.npy')[:num_sample]
 data = torch.tensor(np.concatenate((weights, profits), -1), dtype = torch.float32)
 label = torch.tensor(label, dtype = torch.float32)
 model = SimpleNN(input_size, hidden_size, output_size)

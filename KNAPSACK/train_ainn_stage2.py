@@ -4,19 +4,34 @@ import sys
 import numpy as np
 import random
 import torch.nn.functional as F
-from run_eval import main, run_inference
+from stage_helper.run_eval import main, run_inference
 from flax.core import freeze, unfreeze
-torch.manual_seed(0)
+import yaml
+import argparse
 
-num_sample = 1000
+parser = argparse.ArgumentParser('Train AINN - KNAPSACK')
+parser.add_argument("--config", type=str, default = 'ainn', help="config")
+args = parser.parse_args()
+
+cfg = yaml.safe_load(open('config/{}.yaml'.format(args.config)))
+
+
+SEED = cfg['seed'] #12345
+torch.manual_seed(SEED)
+num_sample = cfg['data']['num_samples']
+
+input_size = cfg['stage1']['input_size'] #10
+hidden_size = cfg['stage1']['hidden_size'] #64
+output_size = cfg['stage1']['output_size'] #5
+num_particles = cfg['stage2']['num_particles'] #100
+num_iterations = cfg['stage2']['num_iterations'] #50
 
 def compute_profits(sorted_z_ind, weights, profits):
     batch_size = weights.size()[0]
     ind_value = torch.zeros((batch_size, 5)) #.to('cuda')
     for i in range(batch_size):
-        remaining_weight = 15
         curr_ind = torch.tensor([0, 0, 0, 0, 0], dtype=torch.float32) #.to('cuda')
-        
+        remaining_weight = 15
         for ind in sorted_z_ind[i]:
             if remaining_weight <= 0:
                 break
@@ -131,9 +146,9 @@ def particle_swarm_optimization(model0, input_size, hidden_size, output_size, nu
     global_best_cosine = -2
     best_fitness_score = -10000
 
-    weights_test = np.load('feature/feature_weight_test.npy')
-    profits_test = np.load('feature/feature_profit_test.npy')
-    label_test = np.load('feature/label_ind_test.npy')
+    weights_test = np.load('dataset/feature_weight_val.npy')
+    profits_test = np.load('dataset/feature_profit_val.npy')
+    label_test = np.load('dataset/label_ind_val.npy')
     data_test = torch.tensor(np.concatenate((weights_test, profits_test), -1), dtype=torch.float32)
     label_test = torch.tensor(label_test, dtype=torch.float32)
 
@@ -152,7 +167,7 @@ def particle_swarm_optimization(model0, input_size, hidden_size, output_size, nu
         personal_best_positions.append({k: v.clone() for k, v in random_params.items()})
         personal_best_scores.append(float('-inf'))
     
-    w, c1, c2 = 0.5, 1.8, 1.8
+    w, c1, c2 = cfg['stage2']['w'], cfg['stage2']['c1'], cfg['stage2']['c2'] #0.5, 1.8, 1.8
 
     for iteration in range(num_iterations):
         for i in range(num_particles):
@@ -172,25 +187,17 @@ def particle_swarm_optimization(model0, input_size, hidden_size, output_size, nu
             if fitness > global_best_score:
                 global_best_score = fitness
                 global_best_cosine = acc
-                print(iteration, fitness, acc)
+                print(f"Iteration {iteration}: Particle={i}, Score={fitness:.5f}")
                 global_best_position = {k: v.clone() for k, v in particles[i].items()}
 
                 model0.eval()
-                z = model0(data_test) 
-                
-                sorted_z_ind = run_inference(model1, z.detach().numpy(), rng_key)
-
-                sorted_z_value2, sorted_z_ind2 = torch.sort(data_test[:, 5:] / data_test[:, :5], dim=-1, descending=True)
-                print(sorted_z_ind[0], sorted_z_ind2[0])
-                c, t = compute_acc(torch.tensor(sorted_z_ind), sorted_z_ind2)
-                print("acc:", c / t)
-
-                _fitness, _acc = fitness_function(model0, model1, data_test, label_test, rng_key) 
+                _fitness, _ = fitness_function(model0, model1, data_test, label_test, rng_key) 
+                print(f"    Val score:{_fitness:.5f}")
                 if _fitness > best_fitness_score:
                     print('saving...')
                     best_fitness_score = _fitness
 
-                    model1.save_model('model_ainn_stage2_{}.pkl'.format(num_sample))
+                    model1.save_model('model_{}_stage2_{}.pkl'.format(args.config, num_sample))
                     
         for i in range(num_particles):
             new_velocity = {}
@@ -209,21 +216,15 @@ def particle_swarm_optimization(model0, input_size, hidden_size, output_size, nu
         
     return global_best_position
 
-# Example data
-input_size = 10
-hidden_size = 64
-output_size = 5
-num_particles = 50
-num_iterations = 30
-weights = np.load('feature/feature_weight_train.npy')[:num_sample]
-profits = np.load('feature/feature_profit_train.npy')[:num_sample]
-label = np.load('feature/label_ind_train.npy')[:num_sample]
+weights = np.load('dataset/feature_weight_train.npy')[:num_sample]
+profits = np.load('dataset/feature_profit_train.npy')[:num_sample]
+label = np.load('dataset/label_ind_train.npy')[:num_sample]
 data = torch.tensor(np.concatenate((weights, profits), -1), dtype = torch.float32)
 label = torch.tensor(label, dtype = torch.float32)
 
 model = SimpleNN(input_size, hidden_size, output_size)
 state_dict = torch.load(
-        'model_ainn_stage1_{}.pth'.format(num_sample), map_location='cpu'
+        'ainn_model/model_{}_stage1_{}.pth'.format(args.config, num_sample), map_location='cpu'
     )
 model.load_state_dict(state_dict['net'])
 

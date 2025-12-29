@@ -2,6 +2,7 @@ import joblib
 import torch
 import pickle
 import torch.nn as nn
+import os
 import sys
 import numpy as np
 import random
@@ -9,9 +10,24 @@ import torch.nn.functional as F
 from hmmlearn.hmm import CategoricalHMM
 from sklearn.preprocessing import KBinsDiscretizer
 import warnings
+import yaml
+import argparse
 
+parser = argparse.ArgumentParser('Get intermediate results of AINN - DTW')
+parser.add_argument("--config", type=str, default = 'ainn_less_iter', help="config")
+args = parser.parse_args()
 
-num_sample = 400
+cfg = yaml.safe_load(open('../config/{}.yaml'.format(args.config)))
+
+torch.manual_seed(cfg['seed'])
+
+num_sample = cfg['data']['num_samples']
+hidden_size = cfg['stage1']['hidden_size']
+hstage_hidden_size = cfg['stage2']['hstage_hidden_size']
+num_particles = cfg['stage2']['num_particles']
+num_iterations = cfg['stage2']['num_iterations']
+num_component = cfg['hmm_component']
+
 
 warnings.filterwarnings(
     "ignore",
@@ -82,35 +98,35 @@ def fitness_function(model1, model2, data, label, model_hmm, _model_hmm, mode = 
 
     prob_terms = np.sum(np.abs(start_prob_nn - model_hmm.startprob_)) + np.sum(np.abs(trans_prob_nn - model_hmm.transmat_)) + np.sum(np.abs(start_prob_nn2 - _model_hmm.startprob_)) + np.sum(np.abs(trans_prob_nn2 - _model_hmm.transmat_))
     score -= 0.05 * prob_terms
-    
-    with open('stage1_z1_{}.pkl'.format(mode), 'wb') as f:
+    os.makedirs('intermediate', exist_ok = True)
+    with open('intermediate/stage1_z1_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(stage1_z1, f)
-    with open('stage1_z_embed_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/stage1_z_embed_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(stage1_z_embed, f)
-    with open('stage1_inter_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/stage1_inter_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(stage1_inter, f)
-    with open('stage2_ret_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/stage2_ret_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(stage2_ret, f)
-    with open('stage2_pred_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/stage2_pred_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(stage2_pred, f)
-    with open('stage2_inter_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/stage2_inter_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(stage2_inter, f)
-    with open('stage2_inter2_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/stage2_inter2_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(stage2_inter2, f)
 
-    with open('_stage1_z1_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/_stage1_z1_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(_stage1_z1, f)
-    with open('_stage1_z_embed_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/_stage1_z_embed_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(_stage1_z_embed, f)
-    with open('_stage1_inter_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/_stage1_inter_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(_stage1_inter, f)
-    with open('_stage2_ret_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/_stage2_ret_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(_stage2_ret, f)
-    with open('_stage2_pred_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/_stage2_pred_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(_stage2_pred, f)
-    with open('_stage2_inter_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/_stage2_inter_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(_stage2_inter, f)
-    with open('_stage2_inter2_{}.pkl'.format(mode), 'wb') as f:
+    with open('intermediate/_stage2_inter2_{}.pkl'.format(mode), 'wb') as f:
         pickle.dump(_stage2_inter2, f)
 
     return score, correct/total
@@ -222,12 +238,10 @@ class SimpleNN(nn.Module):
 
 
 
-input_size = 10
-hidden_size = 128
 
-data0 = pickle.load(open('../train_fall_dataset_seq.pkl', 'rb'))
+data0 = pickle.load(open('../dataset/train_fall_dataset_seq.pkl', 'rb'))
 label0 = [1 for i in range(len(data0))]
-data1 = pickle.load(open('../_train_fall_dataset_seq.pkl', 'rb'))
+data1 = pickle.load(open('../dataset/_train_fall_dataset_seq.pkl', 'rb'))
 label1 = [0 for i in range(len(data1))]
 
 #data = data0 + data1
@@ -236,47 +250,50 @@ data = data0[:] + data1[:]
 label = label0[:] + label1[:]
 
 
-data_test0 = pickle.load(open('../val_fall_dataset_seq.pkl', 'rb'))
+data_test0 = pickle.load(open('../dataset/val_fall_dataset_seq.pkl', 'rb'))
 label_test0 = [1 for i in range(len(data_test0))]
 
-data_test1 = pickle.load(open('../_val_fall_dataset_seq.pkl', 'rb'))
+data_test1 = pickle.load(open('../dataset/_val_fall_dataset_seq.pkl', 'rb'))
 label_test1 = [0 for i in range(len(data_test1))]
 
 data_test = data_test0 + data_test1
 label_test = label_test0 + label_test1
 
 
-_data_test0 = pickle.load(open('../test_fall_dataset_seq.pkl', 'rb'))
+_data_test0 = pickle.load(open('../dataset/test_fall_dataset_seq.pkl', 'rb'))
 _label_test0 = [1 for i in range(len(_data_test0))]
 
-_data_test1 = pickle.load(open('../_test_fall_dataset_seq.pkl', 'rb'))
+_data_test1 = pickle.load(open('../dataset/_test_fall_dataset_seq.pkl', 'rb'))
 _label_test1 = [0 for i in range(len(_data_test1))]
 
 _data_test = _data_test0 + _data_test1
 _label_test = _label_test0 + _label_test1
 
 
-model_hmm = CategoricalHMM(n_components=20, n_iter=100, random_state=42)
+model_hmm = CategoricalHMM(n_components=num_component)
 
-_model_hmm = CategoricalHMM(n_components=20, n_iter=100, random_state=42)
+_model_hmm = CategoricalHMM(n_components=num_component)
 
-model_hmm = joblib.load("../trained_hmm_model.pkl")
-_model_hmm = joblib.load("../_trained_hmm_model.pkl")
+model_hmm = joblib.load("../hmm_model/trained_hmm_model.pkl")
+_model_hmm = joblib.load("../hmm_model/_trained_hmm_model.pkl")
 
 
 model0 = SimpleNN(hidden_size)
 state_dict = torch.load(
-        'model_ainn_state_{}_less_iter.pth'.format(num_sample), map_location='cpu'
+        '../ainn_model/model_{}_state_{}.pth'.format(args.config, num_sample), map_location='cpu'
     )
 model0.load_state_dict(state_dict['net'])
 
 
 model1 = DualHMMClassifier()
 state_dict = torch.load(
-        'mmodel_ainn_hmm_{}_less_iter.pth'.format(num_sample), map_location='cpu'
+        '../ainn_model/model_{}_hmm_{}.pth'.format(args.config, num_sample), map_location='cpu'
     )
 model1.load_state_dict(state_dict['net'])
 
+print('constructing training part...')
 fitness_function(model0, model1, data, label, model_hmm, _model_hmm, mode = 'train')
+print('constructing validation part...')
 fitness_function(model0, model1, data_test, label_test, model_hmm, _model_hmm, mode = 'val')
+print('constructing testing part...')
 fitness_function(model0, model1, _data_test, _label_test, model_hmm, _model_hmm, mode = 'test')

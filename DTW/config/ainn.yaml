@@ -1,0 +1,6 @@
+seed: 12345
+knn_bref: 6
+knn_k: 2
+#portion can be 0.1, 0.3, 0.5, 0.7, 0.9
+portion: 0.1
+epoch: 80

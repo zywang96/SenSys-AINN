@@ -1,4 +1,5 @@
 import joblib
+import os
 import torch
 import pickle
 import torch.nn as nn
@@ -7,10 +8,23 @@ import numpy as np
 import random
 import torch.nn.functional as F
 from hmmlearn.hmm import CategoricalHMM
+import yaml
+import argparse
 
-torch.manual_seed(0)
+parser = argparse.ArgumentParser('Train AINN - HMM')
+parser.add_argument("--config", type=str, default = 'ainn', help="config")
+args = parser.parse_args()
 
-num_sample = 50
+cfg = yaml.safe_load(open('config/{}.yaml'.format(args.config)))
+
+torch.manual_seed(cfg['seed'])
+
+num_sample = cfg['data']['num_samples']
+hidden_size = cfg['stage1']['hidden_size']
+num_particles = cfg['stage1']['num_particles']
+num_iterations = cfg['stage1']['num_iterations']
+num_component = cfg['hmm_component']
+
 
 def forward_scaling(startprob, transmat, frameprob):
     min_sum = 1e-300
@@ -145,7 +159,7 @@ def particle_swarm_optimization(hidden_size, num_particles, num_iterations, data
         personal_best_positions.append({k: v.clone() for k, v in random_params.items()})
         personal_best_scores.append(float('-inf'))
 
-    w, c1, c2 = 0.5, 1.8, 1.8
+    w, c1, c2 = cfg['stage1']['w'], cfg['stage1']['c1'], cfg['stage1']['c2']
 
     for iteration in range(num_iterations):
         for i in range(num_particles):
@@ -161,15 +175,16 @@ def particle_swarm_optimization(hidden_size, num_particles, num_iterations, data
             if fitness > global_best_score:
                 global_best_score = fitness
                 global_best_cosine = acc
-                print(iteration, fitness, acc)
+                print(f"Iteration {iteration}: Particle={i}, Score={fitness:.2f}")
                 global_best_position = {k: v.clone() for k, v in particles[i].items()} 
 
-                _fitness, _acc = fitness_function(model, data_test, label_test, model_hmm, _model_hmm)
-                print("acc: ", _acc)
+                _fitness, _ = fitness_function(model, data_test, label_test, model_hmm, _model_hmm)
+                print(f"	Val score={_fitness:.4f}")
                 if _fitness > best_fitness_score:
-                    print('saving...')
+                    print(f'	Saving...')
                     state_dict = {'net': model.state_dict()}
-                    torch.save(state_dict, 'model_ainn_state_{}.pth'.format(num_sample))
+                    os.makedirs('ainn_model', exist_ok = True)
+                    torch.save(state_dict, 'ainn_model/model_{}_state_{}.pth'.format(args.config, num_sample))
 
                     best_fitness_score = _fitness
 
@@ -191,18 +206,12 @@ def particle_swarm_optimization(hidden_size, num_particles, num_iterations, data
         
     return global_best_position
 
-# Example data
-input_size = 10
-hidden_size = 128
-output_size = 5
-num_particles = 30
-num_iterations = 30
 
-data0 = pickle.load(open('train_fall_dataset_seq.pkl', 'rb'))
+data0 = pickle.load(open('dataset/train_fall_dataset_seq.pkl', 'rb'))
 label0 = [1 for i in range(len(data0))]
 d0_size = len(label0)
 
-data1 = pickle.load(open('_train_fall_dataset_seq.pkl', 'rb'))
+data1 = pickle.load(open('dataset/_train_fall_dataset_seq.pkl', 'rb'))
 label1 = [0 for i in range(len(data1))]
 d1_size = len(label1)
 
@@ -210,22 +219,22 @@ data = data0[:num_sample//2] + data1[:num_sample//2]
 label = label0[:num_sample//2] + label1[:num_sample//2]
 
 
-data_test0 = pickle.load(open('val_fall_dataset_seq.pkl', 'rb'))
+data_test0 = pickle.load(open('dataset/val_fall_dataset_seq.pkl', 'rb'))
 label_test0 = [1 for i in range(len(data_test0))]
 
-data_test1 = pickle.load(open('_val_fall_dataset_seq.pkl', 'rb'))
+data_test1 = pickle.load(open('dataset/_val_fall_dataset_seq.pkl', 'rb'))
 label_test1 = [0 for i in range(len(data_test1))]
 
 data_test = data_test0 + data_test1
 label_test = label_test0 + label_test1
 
 
-model_hmm = CategoricalHMM(n_components=3, n_iter=100, random_state=42)
+model_hmm = CategoricalHMM(n_components=num_component)
 
-_model_hmm = CategoricalHMM(n_components=3, n_iter=100, random_state=42)
+_model_hmm = CategoricalHMM(n_components=num_component)
 
-model_hmm = joblib.load("trained_hmm_model.pkl")
-_model_hmm = joblib.load("_trained_hmm_model.pkl")
+model_hmm = joblib.load("hmm_model/trained_hmm_model.pkl")
+_model_hmm = joblib.load("hmm_model/_trained_hmm_model.pkl")
 
 
 _ = particle_swarm_optimization(

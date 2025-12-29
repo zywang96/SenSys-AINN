@@ -1,0 +1,5 @@
+seed: 12345
+knn_bref: 6
+knn_k: 2
+portion: 0.5
+epoch: 2

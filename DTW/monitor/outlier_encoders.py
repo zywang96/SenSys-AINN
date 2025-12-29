@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import pickle
 import random
+import os
 
 seed = 0
 random.seed(seed)
@@ -18,10 +19,10 @@ torch.manual_seed(seed)
 def load_data(prefix="", mode = 'train'):
     if True:
         return (
-        np.load('{}_{}_phi_int_list_stack.npy'.format(prefix, mode)),
-        np.load('{}_{}_cs_list_stack.npy'.format(prefix, mode)),
-        np.load('{}_{}_l2_list_stack.npy'.format(prefix, mode)),
-        np.load('{}_{}_ref_enc_list_stack.npy'.format(prefix, mode))
+        np.load('monitor_dataset/{}_{}_phi_int_list_stack.npy'.format(prefix, mode)),
+        np.load('monitor_dataset/{}_{}_cs_list_stack.npy'.format(prefix, mode)),
+        np.load('monitor_dataset/{}_{}_l2_list_stack.npy'.format(prefix, mode)),
+        np.load('monitor_dataset/{}_{}_ref_enc_list_stack.npy'.format(prefix, mode))
         )
 
 # ========== Dataset ==========
@@ -165,31 +166,45 @@ class GaussianClusterLoss(nn.Module):
         loss = 0.5 * dist_sq / torch.exp(self.log_sigma * 2) + self.log_sigma
         return loss.mean()
 
-def evaluate(model1, model2, classifier, test_dataset, test_labels, device):
+def evaluate(model1, model2, classifier, test_dataset, flag, device):
     model1.eval()
     model2.eval()
     classifier.eval()
     with torch.no_grad():
         data = [test_dataset[i] for i in range(len(test_dataset))]
-        phi, cs, l1 = map(lambda x: x.to(device), collate_fn(data))
-        f1 = model1(phi)
+        if flag == 'pos':
+            test_labels = [0 for i in range(len(test_dataset))]
+        else:
+            test_labels = [1 for i in range(len(test_dataset))]
+        phi, cs, l1, ref = map(lambda x: x.to(device), collate_fn(data))
+        f1 = model1(phi, ref)
         f2 = model2(l1, cs)
         feat = torch.cat([f1, f2], dim=-1)
         logits = classifier(feat).squeeze(1)
         preds = (logits > 0).long().cpu()
         labels = torch.tensor(test_labels).long()
-        acc = (preds == labels).float().mean().item()
-    print(f"Test Accuracy: {acc:.4f}")
+        #acc = (preds == labels).float().mean().item()
+        correct = (preds == labels).sum().item()
+        total = labels.numel()
+    #print(f"Test Accuracy: {acc:.4f}")
+    return correct, total
 
 # ========== Training ==========
 def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    best_acc = 0
     pos_data = load_data('pos', 'train')
     neg_data = load_data('neg', 'train')
 
     pos_dataset = FullDataset(*pos_data)
     neg_dataset = FullDataset(*neg_data)
+
+
+    pos_data_ = load_data('pos', 'validation')
+    neg_data_ = load_data('neg', 'validation')
+    test_dataset_pos = FullDataset(*pos_data_)
+    test_dataset_neg = FullDataset(*neg_data_)
+
 
     stage1_model = BranchCNN().to(device)
     stage2_model = BranchCNNCat(in_ch = 1).to(device)
@@ -198,11 +213,15 @@ def train():
 
     optimizer = torch.optim.AdamW(
         list(stage1_model.parameters()) + list(stage2_model.parameters()) + list(classifier.parameters()) + list(cluster_loss_fn.parameters()),
-        lr=1e-4, weight_decay = 1e-3
+        lr=5e-4
     )
 
-    for epoch in range(1, 101):
-        print("Epoch: ", epoch)
+    for epoch in range(1, 301):
+
+        stage1_model.train()
+        stage2_model.train()
+        classifier.train()
+
         total_correct = 0
         total_samples = 0
 
@@ -212,7 +231,7 @@ def train():
         neg_idx = list(range(len(neg_dataset)))
         single_feats = []
         single_label = []
-        for _ in range(100 * 2):
+        for _ in range(50):
             i, j = random.sample(pos_idx, 2)
             pairs.append((pos_dataset[i], pos_dataset[j]))
             labels.append(1)
@@ -220,7 +239,7 @@ def train():
             single_label.append(0)
             single_feats.append(pos_dataset[j])
             single_label.append(0)
-        for _ in range(100 * 2):
+        for _ in range(50):
             i, j = random.sample(neg_idx, 2)
             pairs.append((neg_dataset[i], neg_dataset[j]))
             labels.append(1)
@@ -228,7 +247,7 @@ def train():
             single_label.append(1)
             single_feats.append(neg_dataset[j])
             single_label.append(1)
-        for _ in range(2500 * 2):
+        for _ in range(1000):
             i = random.choice(pos_idx)
             j = random.choice(neg_idx)
             pairs.append((pos_dataset[i], neg_dataset[j]))
@@ -238,7 +257,11 @@ def train():
             single_feats.append(neg_dataset[j])
             single_label.append(1)
 
-        random.shuffle(pairs)
+        #random.shuffle(pairs)
+        perm = list(range(len(pairs)))
+        random.shuffle(perm)
+        pairs  = [pairs[k] for k in perm]
+        labels = [labels[k] for k in perm]
 
         batch_size = 32
         for i in range(0, len(pairs), batch_size):
@@ -279,7 +302,7 @@ def train():
 
             loss_cluster = cluster_loss_fn(feat_, cls_labels.long())
 
-            total_loss = loss_cluster + 100 * loss_cls + 10 * loss_contrast
+            total_loss = loss_cluster + 100 * loss_cls + 1 * loss_contrast
 
             optimizer.zero_grad()
             total_loss.backward()
@@ -291,12 +314,40 @@ def train():
 
         acc = total_correct / total_samples
         print(f"Epoch {epoch}: Accuracy = {acc:.4f}")
+        c1, t1 = evaluate(stage1_model, stage2_model, classifier, test_dataset_pos, 'pos', device)
+        c2, t2 = evaluate(stage1_model, stage2_model, classifier, test_dataset_neg, 'neg', device)
+        print(f"	Val Accuracy = {(c1 + c2) / (t1 + t2):.4f}")
+        if (c1 + c2) / (t1 + t2) > best_acc:
+            print('saving...')
+            os.makedirs('model', exist_ok = True)
+            torch.save({
+            'stage1': stage1_model.state_dict(),
+            'stage2': stage2_model.state_dict(),
+            'classifier': classifier.state_dict(),
+            }, 'model/model_monitor.pth'.format(epoch))
+            best_acc = (c1 + c2) / (t1 + t2)
 
-        torch.save({
-        'stage1': stage1_model.state_dict(),
-        'stage2': stage2_model.state_dict(),
-        'classifier': classifier.state_dict(),
-        }, 'model_monitor.pth'.format(epoch))
 
 if __name__ == "__main__":
     train()
+
+    #==============Eval=================#
+    device = 'cpu'
+    stage1_model = BranchCNN().to(device)
+    stage2_model = BranchCNNCat().to(device)
+    classifier = nn.Linear(2, 1)
+
+    state_dict = torch.load('model/model_monitor.pth', map_location='cpu')
+    stage1_model.load_state_dict(state_dict['stage1'])
+    stage2_model.load_state_dict(state_dict['stage2'])
+    classifier.load_state_dict(state_dict['classifier'])
+
+    pos_data = load_data('pos', 'test')
+    neg_data = load_data('neg', 'test')
+    test_dataset_pos = FullDataset(*pos_data)
+    test_dataset_neg = FullDataset(*neg_data)
+
+
+    c1, t1 = evaluate(stage1_model, stage2_model, classifier, test_dataset_pos, 'pos', device)
+    c2, t2 = evaluate(stage1_model, stage2_model, classifier, test_dataset_neg, 'neg', device)
+    print('Test Accuracy: ', (c1  + c2) / (t1 + t2))

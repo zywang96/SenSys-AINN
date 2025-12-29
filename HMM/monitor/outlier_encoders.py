@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import pickle
 import random
+import os
 
 seed = 0
 random.seed(seed)
@@ -17,23 +18,23 @@ torch.manual_seed(seed)
 def load_data(prefix='', mode = 'train'):
     if len(prefix) == 0:
         return (
-        pickle.load(open('stage1_z1_{}.pkl'.format(mode), 'rb')),
-        pickle.load(open('stage1_z_embed_{}.pkl'.format(mode), 'rb')),
-        pickle.load(open('stage1_inter_{}.pkl'.format(mode), 'rb')),
-        pickle.load(open('stage2_ret_{}.pkl'.format(mode), 'rb')),
-        pickle.load(open('stage2_pred_{}.pkl'.format(mode), 'rb')),
-        pickle.load(open('stage2_inter_{}.pkl'.format(mode), 'rb')),
-        pickle.load(open('stage2_inter2_{}.pkl'.format(mode), 'rb')),
+        pickle.load(open('intermediate/stage1_z1_{}.pkl'.format(mode), 'rb')),
+        pickle.load(open('intermediate/stage1_z_embed_{}.pkl'.format(mode), 'rb')),
+        pickle.load(open('intermediate/stage1_inter_{}.pkl'.format(mode), 'rb')),
+        pickle.load(open('intermediate/stage2_ret_{}.pkl'.format(mode), 'rb')),
+        pickle.load(open('intermediate/stage2_pred_{}.pkl'.format(mode), 'rb')),
+        pickle.load(open('intermediate/stage2_inter_{}.pkl'.format(mode), 'rb')),
+        pickle.load(open('intermediate/stage2_inter2_{}.pkl'.format(mode), 'rb')),
         )
     else:
         return (
-        pickle.load(open('{}stage1_z1_{}.pkl'.format(prefix, mode), 'rb')),
-        pickle.load(open('{}stage1_z_embed_{}.pkl'.format(prefix, mode), 'rb')),
-        pickle.load(open('{}stage1_inter_{}.pkl'.format(prefix, mode), 'rb')),
-        pickle.load(open('{}stage2_ret_{}.pkl'.format(prefix, mode), 'rb')),
-        pickle.load(open('{}stage2_pred_{}.pkl'.format(prefix, mode), 'rb')),
-        pickle.load(open('{}stage2_inter_{}.pkl'.format(prefix, mode), 'rb')),
-        pickle.load(open('{}stage2_inter2_{}.pkl'.format(prefix, mode), 'rb')),
+        pickle.load(open('intermediate/{}stage1_z1_{}.pkl'.format(prefix, mode), 'rb')),
+        pickle.load(open('intermediate/{}stage1_z_embed_{}.pkl'.format(prefix, mode), 'rb')),
+        pickle.load(open('intermediate/{}stage1_inter_{}.pkl'.format(prefix, mode), 'rb')),
+        pickle.load(open('intermediate/{}stage2_ret_{}.pkl'.format(prefix, mode), 'rb')),
+        pickle.load(open('intermediate/{}stage2_pred_{}.pkl'.format(prefix, mode), 'rb')),
+        pickle.load(open('intermediate/{}stage2_inter_{}.pkl'.format(prefix, mode), 'rb')),
+        pickle.load(open('intermediate/{}stage2_inter2_{}.pkl'.format(prefix, mode), 'rb')),
         )
 
 # ========== Dataset ==========
@@ -55,7 +56,7 @@ class FullDataset(Dataset):
             torch.tensor(inter2, dtype=torch.float32),
             torch.tensor(inter3, dtype=torch.float32)
         )
-
+'''
 # ========== Collate Function ==========
 def collate_fn(batch):
     z1, z_embed, inter, ret, pred, inter2, inter3 = zip(*batch)
@@ -65,6 +66,36 @@ def collate_fn(batch):
     inter = pad_sequence(inter, batch_first=True)
     mask = torch.arange(z1.shape[1]).expand(len(lengths), z1.shape[1]) >= lengths.unsqueeze(1)
     return z1, z_embed, inter, mask, torch.stack(ret), torch.stack(pred), torch.stack(inter2), torch.stack(inter3)
+'''
+
+def collate_fn(batch, T_fixed = 15):
+    z1, z_embed, inter, ret, pred, inter2, inter3 = zip(*batch)
+    lengths = torch.tensor([x.shape[0] for x in z1])
+
+    z1 = pad_sequence(z1, batch_first=True)       # (B, T, 1)
+    z_embed = pad_sequence(z_embed, batch_first=True)
+    inter = pad_sequence(inter, batch_first=True)
+
+    B, T, _ = z1.shape
+
+    # truncate or pad to T_fixed
+    if T > T_fixed:
+        z1 = z1[:, :T_fixed]
+        z_embed = z_embed[:, :T_fixed]
+        inter = inter[:, :T_fixed]
+        lengths = torch.clamp(lengths, max=T_fixed)
+        T = T_fixed
+    elif T < T_fixed:
+        pad_len = T_fixed - T
+        z1 = F.pad(z1, (0, 0, 0, pad_len))              # pad time dim
+        z_embed = F.pad(z_embed, (0, 0, 0, pad_len))
+        inter = F.pad(inter, (0, 0, 0, pad_len))
+        T = T_fixed
+
+    mask = torch.arange(T).expand(B, T) >= lengths.unsqueeze(1)  # True = PAD
+
+    return z1, z_embed, inter, mask, torch.stack(ret), torch.stack(pred), torch.stack(inter2), torch.stack(inter3)
+
 
 # ========== Models ==========
 class Stage1TransformerEncoder(nn.Module):
@@ -86,6 +117,10 @@ class Stage1TransformerEncoder(nn.Module):
         x = self.fusion(torch.cat([z1, z_embed, inter], dim=-1))
         x = self.encoder(x, src_key_padding_mask=mask)
         x = self.pool(x.permute(0, 2, 1)).squeeze(-1)
+        #valid = (~mask).unsqueeze(-1).float()          # (B,T,1), 1 for real tokens
+        #x = x * valid
+        #denom = valid.sum(dim=1).clamp(min=1.0)        # (B,1)
+        #x = x.sum(dim=1) / denom                       # (B,d_model)
         return self.output_proj(x)
 
 class Stage2MLPEncoder(nn.Module):
@@ -124,12 +159,17 @@ class GaussianClusterLoss(nn.Module):
         loss = 0.5 * dist_sq / torch.exp(self.log_sigma * 2) + self.log_sigma
         return loss.mean()
 
-def evaluate(model1, model2, classifier, test_dataset, test_labels, device):
+def evaluate(model1, model2, classifier, test_dataset, flag, device):
     model1.eval()
     model2.eval()
     classifier.eval()
+    
     with torch.no_grad():
         data = [test_dataset[i] for i in range(len(test_dataset))]
+        if flag == 'pos':
+            test_labels = [0 for i in range(len(test_dataset))]
+        else:
+            test_labels = [1 for i in range(len(test_dataset))]
         z1, z_embed, inter, mask, ret, pred, inter2, inter3 = map(lambda x: x.to(device), collate_fn(data))
         f1 = model1(z1, z_embed, inter, mask)
         f2 = model2(ret, pred, inter2, inter3)
@@ -137,8 +177,36 @@ def evaluate(model1, model2, classifier, test_dataset, test_labels, device):
         logits = classifier(feat).squeeze(1)
         preds = (logits > 0).long().cpu()
         labels = torch.tensor(test_labels).long()
-        acc = (preds == labels).float().mean().item()
-    print(f"Test Accuracy: {acc:.4f}")
+        #acc = (preds == labels).float().mean().item()
+        correct = (preds == labels).sum().item()
+        total = labels.numel()
+    '''
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for z1, z_embed, inter, mask, ret, pred, inter2, inter3 in test_dataset:
+            if flag == 'pos':
+                test_labels = [0 for i in range(z1.size()[0])]
+            else:
+                test_labels = [1 for i in range(z1.size()[0])]
+            z1, z_embed, inter, mask = z1.to(device), z_embed.to(device), inter.to(device), mask.to(device)
+            ret, pred = ret.to(device), pred.to(device)
+            inter2, inter3 = inter2.to(device), inter3.to(device)
+
+            f1 = model1(z1, z_embed, inter, mask)
+            f2 = model2(ret, pred, inter2, inter3)
+            feat = torch.cat([f1, f2], dim=-1)
+            logits = classifier(feat).squeeze(1)
+            preds = (logits > 0).long().cpu()
+            labels = torch.tensor(test_labels).long()
+
+            correct += (preds == labels).sum().item()
+            total += labels.numel()
+    '''
+    #print(f"Test Accuracy: {acc:.4f}")
+    return correct, total
+
+
 
 # ========== Training ==========
 def train():
@@ -151,6 +219,13 @@ def train():
     pos_dataset = FullDataset(*pos_data)
     neg_dataset = FullDataset(*neg_data)
 
+    pos_data_ = load_data('', 'val')
+    neg_data_ = load_data('_', 'val')
+    best_acc = 0
+
+    test_dataset_pos = FullDataset(*pos_data_)
+    test_dataset_neg = FullDataset(*neg_data_)
+
     stage1_model = Stage1TransformerEncoder(input_dims=(N1, N2, N3)).to(device)
     stage2_model = Stage2MLPEncoder().to(device)
     classifier = nn.Linear(2, 1).to(device)
@@ -158,10 +233,13 @@ def train():
 
     optimizer = torch.optim.AdamW(
         list(stage1_model.parameters()) + list(stage2_model.parameters()) + list(classifier.parameters()) + list(cluster_loss_fn.parameters()),
-        lr=1e-4
+        lr=5e-4
     )
 
-    for epoch in range(1, 11):
+    for epoch in range(1, 201):
+        stage1_model.train()
+        stage2_model.train()
+        classifier.train()
         total_correct = 0
         total_samples = 0
 
@@ -171,7 +249,7 @@ def train():
         neg_idx = list(range(len(neg_dataset)))
         single_feats = []
         single_label = []
-        for _ in range(250):
+        for _ in range(25):
             i, j = random.sample(pos_idx, 2)
             pairs.append((pos_dataset[i], pos_dataset[j]))
             labels.append(1)
@@ -179,7 +257,7 @@ def train():
             single_label.append(0)
             single_feats.append(pos_dataset[j])
             single_label.append(0)
-        for _ in range(250):
+        for _ in range(25):
             i, j = random.sample(neg_idx, 2)
             pairs.append((neg_dataset[i], neg_dataset[j]))
             labels.append(1)
@@ -187,7 +265,7 @@ def train():
             single_label.append(1)
             single_feats.append(neg_dataset[j])
             single_label.append(1)
-        for _ in range(5000):
+        for _ in range(500): #change this based on your GPU memory (4000 for RTX 2080 Ti)
             i = random.choice(pos_idx)
             j = random.choice(neg_idx)
             pairs.append((pos_dataset[i], neg_dataset[j]))
@@ -197,7 +275,11 @@ def train():
             single_feats.append(neg_dataset[j])
             single_label.append(1)
 
-        random.shuffle(pairs)
+        #random.shuffle(pairs)
+        perm = list(range(len(pairs)))
+        random.shuffle(perm)
+        pairs  = [pairs[k] for k in perm]
+        labels = [labels[k] for k in perm]
 
         batch_size = 32
         for i in range(0, len(pairs), batch_size):
@@ -249,12 +331,45 @@ def train():
 
         acc = total_correct / total_samples
         print(f"Epoch {epoch}: Accuracy = {acc:.4f}")
+        c1, t1 = evaluate(stage1_model, stage2_model, classifier, test_dataset_pos, 'pos', device)
+        c2, t2 = evaluate(stage1_model, stage2_model, classifier, test_dataset_neg, 'neg', device)
+        print(f"        Val Accuracy = {(c1 + c2) / (t1 + t2):.4f}")
+        if (c1 + c2) / (t1 + t2) > best_acc:
+            print('saving...')
+            os.makedirs('model', exist_ok = True)
 
-    torch.save({
-    'stage1': stage1_model.state_dict(),
-    'stage2': stage2_model.state_dict(),
-    'classifier': classifier.state_dict(),
-    }, 'model_final.pth')
+            torch.save({
+                'stage1': stage1_model.state_dict(),
+                'stage2': stage2_model.state_dict(),
+                'classifier': classifier.state_dict(),
+            }, 'model/model_final.pth')
+            best_acc = (c1 + c2) / (t1 + t2)
 
 if __name__ == "__main__":
     train()
+
+    device = 'cpu'
+    pos_data = load_data('', 'test')
+    neg_data = load_data('_', 'test')
+    test_dataset_pos = FullDataset(*pos_data)
+    test_dataset_neg = FullDataset(*neg_data)
+    
+    #test_loader_pos = DataLoader(test_dataset_pos, batch_size=1, collate_fn=collate_fn)
+
+    #test_loader_neg = DataLoader(test_dataset_neg, batch_size=1, collate_fn=collate_fn)
+
+    N1, N2, N3 = 1, pos_data[1][0].shape[1], pos_data[2][0].shape[1]
+    print(N1, N2, N3)
+    stage1_model = Stage1TransformerEncoder(input_dims=(N1, N2, N3)).to(device)
+    stage2_model = Stage2MLPEncoder().to(device)
+    classifier = nn.Linear(2, 1).to(device)
+
+    state_dict = torch.load('model/model_final.pth', map_location='cpu')
+    stage1_model.load_state_dict(state_dict['stage1'])
+    stage2_model.load_state_dict(state_dict['stage2'])
+    classifier.load_state_dict(state_dict['classifier'])
+
+
+    c1, t1 = evaluate(stage1_model, stage2_model, classifier, test_dataset_pos, 'pos', device)
+    c2, t2 = evaluate(stage1_model, stage2_model, classifier, test_dataset_neg, 'neg', device)
+    print('Test Accuracy: ', (c1  + c2) / (t1 + t2))
