@@ -26,7 +26,7 @@ python3 train_ainn_stage3.py --config ainn
 Configuration files live in `./config` as YAML. The command above uses the default config, but you can edit the YAML to tune hyperparameters for your setup.
 You can tune the `num_samples` parameter to control the size of the training dataset (E.g., 1000, 2000, etc.)
 All the models are saved in `./ainn_model` and `./tmp/CLRS30`.
-Right now, this training uses a PSO method that runs mostly on the CPU. We will release a CUDA/GPU version soon.
+Right now, this training uses a PSO method that runs mostly on the CPU. We will release a CUDA/GPU version soon. (Encoder training still relies heavily on the GPU.)
 
 We also include a simple inference script to run the AINN end-to-end.
 
