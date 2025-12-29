@@ -1,4 +1,4 @@
-# Choice Problem (Fracktional Knapsack)
+# Choice Problem (Fractional Knapsack)
 
 This folder contains an implementation of **Choice Problem** using **Fractional Knapsack** as the algorithmic blueprint.
 
