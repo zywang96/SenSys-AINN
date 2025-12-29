@@ -14,8 +14,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchsort
 import argparse
-from torchaudio.sox_effects import apply_effects_tensor
-import torchaudio.functional as AF
 import yaml
 
 parser = argparse.ArgumentParser('Train AINN - DTW')
