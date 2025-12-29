@@ -359,7 +359,7 @@ if __name__ == "__main__":
     #test_loader_neg = DataLoader(test_dataset_neg, batch_size=1, collate_fn=collate_fn)
 
     N1, N2, N3 = 1, pos_data[1][0].shape[1], pos_data[2][0].shape[1]
-    print(N1, N2, N3)
+
     stage1_model = Stage1TransformerEncoder(input_dims=(N1, N2, N3)).to(device)
     stage2_model = Stage2MLPEncoder().to(device)
     classifier = nn.Linear(2, 1).to(device)

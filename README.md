@@ -10,6 +10,10 @@ This repository contains the official implementation of **Algorithm-Informed Neu
 
 Each folder includes the corresponding **dataset**, **baseline models**, and **configurations** needed to reproduce the experiments.
 
+## Quick Start -- Colab
+
+We strongly recommend running the code on a dedicated GPU machine or an HPC cluster using the environment specified in `requirements.txt`. While Colab is convenient to get started with, it can be difficult to manage package versions consistently and reproduce the exact environment, which may lead to suboptimal results.
+
 ## TODO
 - [x] Add instructions/README
 - [ ] Add detailed comments to each function
