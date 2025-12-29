@@ -282,6 +282,7 @@ class BaselineModel(model.Model):
     if not isinstance(features, list):
       assert len(self._spec) == 1
       features = [features]
+    #This JIT disable scope is for Colab, if you are using physical machine, feel free to remove this
     with jax.disable_jit():
       self.params = self.net_fn.init(jax.random.PRNGKey(seed), features, True,  # pytype: disable=wrong-arg-types  # jax-ndarray
                                    algorithm_index=-1,
