@@ -282,7 +282,8 @@ class BaselineModel(model.Model):
     if not isinstance(features, list):
       assert len(self._spec) == 1
       features = [features]
-    self.params = self.net_fn.init(jax.random.PRNGKey(seed), features, True,  # pytype: disable=wrong-arg-types  # jax-ndarray
+    with jax.disable_jit():
+      self.params = self.net_fn.init(jax.random.PRNGKey(seed), features, True,  # pytype: disable=wrong-arg-types  # jax-ndarray
                                    algorithm_index=-1,
                                    return_hints=False,
                                    return_all_outputs=False)
@@ -404,13 +405,13 @@ class BaselineModel(model.Model):
 
     rng_keys = _maybe_pmap_rng_key(rng_key)  # pytype: disable=wrong-arg-types  # numpy-scalars
     features = _maybe_pmap_data(features)
-    return _maybe_restack_from_pmap(
-        self.jitted_predict(
+    #return _maybe_restack_from_pmap(
+    _ =    self._predict(
             self._device_params, rng_keys, features,
             algorithm_index,
             return_hints,
-            return_all_outputs))
-
+            return_all_outputs)
+    return _
   def _loss(self, params, rng_key, feedback, algorithm_index):
     """Calculates model loss f(feedback; params)."""
     outputs = self.net_fn.apply(
