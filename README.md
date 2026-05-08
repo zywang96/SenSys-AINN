@@ -17,12 +17,6 @@ You can also try it on Colab by starting with this Jupyter [notebook](https://co
 However, we strongly recommend running the code on a dedicated GPU machine or an HPC cluster using the environment specified in `requirements.txt`. While Colab is convenient for getting started, it can be difficult to manage package versions consistently and reproduce the exact environment, which may lead to suboptimal results.
 
 
-## TODO
-- [x] Add instructions/README
-- [ ] Add detailed comments to each function
-- [ ] Package the code as a modular AINN library
-
-
 # Reference
 If you find our work helpful, please consider citing it as follows.
 ```
