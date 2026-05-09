@@ -21,17 +21,17 @@ However, we strongly recommend running the code on a dedicated GPU machine or an
 If you find our work helpful, please consider citing it as follows.
 ```
 @inproceedings{ainn2026wang,
-author = {Wang, Zhenyu and Uddin, Md Yusuf Sarwar and Nirjon, Shahriar},
-title = {Short Paper: Towards Algorithmically Grounded Embedded AI Models},
-year = {2026},
-isbn = {9798400723094},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-url = {https://doi.org/10.1145/3774906.3800495},
-doi = {10.1145/3774906.3800495},
-booktitle = {Proceedings of the 2026 ACM/IEEE International Conference on Embedded Artificial Intelligence and Sensing Systems},
-pages = {478–487},
-numpages = {10},
-series = {SenSys '26}
+  author = {Wang, Zhenyu and Uddin, Md Yusuf Sarwar and Nirjon, Shahriar},
+  title = {Short Paper: Towards Algorithmically Grounded Embedded AI Models},
+  year = {2026},
+  isbn = {9798400723094},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/3774906.3800495},
+  doi = {10.1145/3774906.3800495},
+  booktitle = {Proceedings of the 2026 ACM/IEEE International Conference on Embedded Artificial Intelligence and Sensing Systems},
+  pages = {478–487},
+  numpages = {10},
+  series = {SenSys '26}
 }
 ```
